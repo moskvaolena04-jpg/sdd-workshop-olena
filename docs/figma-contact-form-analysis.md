@@ -16,7 +16,11 @@
 
 ## Мої спостереження до AI (2-3)
 
-Не всі помилки на макеті відображаються такі, які були у вимогах. Є додаткові стани (сценарії), які не обговорювали раніше, а саме — Uploading, file type error, file size error, а також **Remove attachment / Видалити вкладення** (є на заповненій формі з PDF, окремої картки в довіднику станів немає). Поле Name на макеті відображається як Full name, що є хибно, так як такої вимоги змінити це не було.
+1. Не всі помилки на макеті збігаються з уже зафіксованими AC/rules Дня 2. Є додаткові стани — **Uploading**, **Wrong file type**, **File too large**, **Remove attachment / Видалити вкладення** (на заповненій формі з PDF; окремої картки в «Reference Overview» немає). **Full name** на макеті vs **Name** у специ — зміни вимог не було (**Q-18**).
+
+2. Макет показує **SLA «три робочі дні»** на Success і **inline** подяку замість поточного RULE-13 (модальне «Ваш запит надіслано»). Кнопка **disabled**, поки форма невалідна, включно з невалідним PDF — цього немає в AC Дня 2 (**Q-15**, **Q-20**, **Q-21**, **Q-23**).
+
+3. Текст **згоди** на макеті відрізняється від поточного сайту; бек-офіс (база, 6 міс., два працівники) на публічному UI **не** зображений — ризик узгодження з **Q-14**, **Q-26** і NFR Дня 2.
 
 ---
 
@@ -139,3 +143,331 @@ _(AI-аналіз: видимі з дизайну для бізнесу та п�
 | **Довідник станів на проді** | Якщо нижній блок «Reference Overview» потрапить на бойовий сайт — плутанина для відвідувачів (це **демо-навігатор**, не користувацький сценарій). |
 | **Відсутність станів для тексту повідомлення** | Без дизайну мінімуму/максимуму — ризик **непогоджених** повідомлень (надто короткі або надмірно довгі) і різних правил між дизайном і специфікацією. |
 | **Функція без вимоги (Remove attachment)** | Кнопка з’явилась у дизайні, але **не зафіксована** в AC Дня 2 і **не перевірена** окремим станом — ризик scope creep або пропуску в тестах/прийманні. |
+
+---
+
+## Компоненти й повторне використання
+
+**Джерело (лише читання):** [прототип Figma Make](https://match-daily-72208179.figma.site/) — перегляд усіх станів через «Preview form state» та картки «Reference Overview» (листопад 2026). **Figma MCP** у середовищі сесії не підключений; змін у файлі Figma не виконувалось.
+
+**Легенда статусів повторного використання**
+
+| Статус | Значення |
+|--------|----------|
+| **Вже існує** | Компонент або патерн уже є в коді; достатньо i18n/конфігурації. |
+| **Близький** | Є основа в `app/shared/components/`, але потрібна адаптація (стани, валідація, розмітка, UX). |
+| **Новий** | У коді немає відповідника; потрібен новий UI-блок або композиція. |
+
+### 1. Поля вводу (текстові)
+
+| Компонент макету | Варіанти / тип | Стани на макеті | Код | Статус |
+|------------------|----------------|-----------------|-----|--------|
+| **Full name** (`textbox`) | Однорядкове, placeholder «Your name» | Empty; Filled & valid; Error (у картці «Email & required» — порожнє ім’я); disabled під час Uploading | `ContactForm.tsx` — MUI `TextField`, `register('name')`, min/max 50 | **Близький** — є поле «Name», не «Full name»; disabled лише при `disabled` prop, не при «незавершеній валідності форми»; max-length helper через `useAutoHideMessage`, на макеті не показано |
+| **Email address** | Однорядкове | Empty; Filled; Error (incomplete email у довіднику); disabled (Uploading) | Той самий `TextField` + Zod email | **Близький** — валідація є; на макеті submit **disabled**, у коді — активний submit + `onChange` валідація |
+| **Phone number** | Однорядкове + **підказка в label** (нормальний стан: «Start with +…»; помилка: текст підказки **замінює** label) | Empty; Filled (+380…); **Invalid** (немає `+`, поле `invalid`, submit disabled); disabled (Uploading) | `TextField` + `useHandlePhoneInput` / маска; phone **optional** у схемі; helper `phoneNumberInvalid` | **Близький** — інша модель валідації (`+` і код країни vs маска); у макеті телефон **обов’язковий** і блокує submit |
+| **Message** | Багаторядкове (textarea) | Empty; Filled; Error (required у довіднику); disabled (Uploading) | `TextField` `multiline` rows={4}, max 1000 | **Близький** — є; на макеті немає окремих помилок min/max довжини |
+
+**Спільний патерн полів:** outlined/filled стиль, червона обводка + helper з іконкою при помилці. У коді стилі helper з іконкою вже в `ContactForm.styles.ts` (`info-error.svg` через `::before`); дизайн-система `~/ds-components/text-field/TextField` **не використовується** в `ContactForm` (лише theme MUI) — **близький**, можлива уніфікація пізніше.
+
+### 2. Блок вкладення (Supporting document)
+
+| Елемент | Варіанти | Стани | Код | Статус |
+|---------|----------|-------|-----|--------|
+| **Зона вкладення** (dashed box, paperclip, copy) | Порожня: «Attach a PDF» + підказка «Scores… up to 5 MB» + **Choose PDF** | Empty; Filled valid («archival-inquiry.pdf», «1.8 MB · PDF ready to send»); Wrong type; File too large; **Uploading** («…68%») | Немає поля файлу в `ContactForm` | **Новий** |
+| **Choose PDF** | Вторинна кнопка в зоні | Усі стани, коли файлу немає або після скидання | — | **Близький** — `~/ds-components/button/Button` `variant="outlined"` / `contained` `color="secondary"` (перевірити в Theme); окремого file-picker компонента немає |
+| **Change file** | Текстова / ghost дія | Після вибору файлу (valid, error, uploading) | — | **Новий** (або text `Button` + `input[type=file]`) |
+| **Remove attachment** | Кнопка поруч із зоною | Filled & valid; Wrong type; File too large; Error (збережені дані) | — | **Новий** |
+| **Прихований file input** | `readonly` textbox у a11y-дереві — тригер вибору | Усі стани з файлом | — | **Новий** |
+
+### 3. Кнопки
+
+| Компонент | Варіанти | Стани | Код | Статус |
+|-----------|----------|-------|-----|--------|
+| **Send message** (primary, full width) | Large CTA | **Disabled**: Empty; Invalid phone; Wrong file type; File too large; Uploading. **Enabled**: Filled & valid; Error (retry). **Label**: «Send message» → «Sending your message…» (Uploading) → «Try sending again» (Error) | `Button` `variant="contained"` `color="tertiary"` `fullWidth` у стилях; `disabled={disabled}` лише під час submit (без `loading` prop і без логіки «форма невалідна») | **Близький** — додати disabled за валідністю + `loading` або зміна label; `Button.loading` дає **CircularProgress**, на макеті — **текст** без спінера |
+| **Write another message** | Primary після успіху | Success (замінює форму) | `NotesConfirmModal` має одну кнопку закриття/підтвердження — інший UX (**модалка** vs **inline** success) | **Близький** — переосмислити success: модалка `ModalComponent` + `NotesConfirmModal` vs full-width panel на макеті |
+| **Choose PDF** | Secondary | Див. блок вкладення | `Button` outlined | **Близький** |
+| **Preview state chips** (Empty, Filled & valid, …) | Toggle group | Лише прототип | — | **Новий** (не для продакшену) |
+
+### 4. Чекбокс згоди
+
+| Компонент | Стани | Код | Статус |
+|-----------|-------|-----|--------|
+| **Privacy consent** + link «privacy policy» | Unchecked (Empty); Checked (Filled, errors, uploading); disabled (Uploading); помилка згоди (у довіднику — разом із required fields, на live формі в Empty не показано) | MUI `Checkbox` + `FormControlLabel` + `Link` до `ROUTES.PRIVACY_POLICY`; помилка через `FormHelperText` + `InfoErrorIcon` | **Вже існує** / **близький** — текст згоди на макеті **інший** (Q-26); `~/ds-components/checkbox/Checkbox` (`CustomCheckbox`) не використовується |
+
+### 5. Помилки та повідомлення
+
+| Тип | Де на макеті | Стани | Код | Статус |
+|-----|--------------|-------|-----|--------|
+| **Helper під полем** (іконка + текст) | Phone (invalid `+`); картки email/required | Invalid phone; email incomplete; empty name/message (у Reference) | `ContactForm` + `styles.textFieldsContainer` (іконка в CSS) | **Вже існує** для полів; для телефону — **близький** (інший текст/правила) |
+| **Alert під вкладенням** (`role="alert"`) | Wrong file type; File too large | Non-PDF; >5 MB; submit disabled | — | **Новий** |
+| **Банер помилки відправки** | Заголовок + абзац над полями | Error («temporary connection») | `OfferCollaborationForm` лише `console.error`; UI помилки немає | **Новий** |
+| **Статус готовності submit** | Рядок під чекбоксом | «Complete all required fields…» / «All required details look good…» | `Typography` `requiredFields` лише статичний попереджувальний текст | **Близький** — додати динамічний status line |
+| **Попередження про обов’язкові поля** | Над формою | Завжди | `t('requiredFields')` | **Вже існує** |
+
+### 6. Індикатор завантаження файлу / відправки
+
+| Елемент | Поведінка на макеті | Код | Статус |
+|---------|---------------------|-----|--------|
+| **Прогрес PDF** | Текст + відсоток у зоні вкладення: «Uploading PDF attachment… 68%» (ймовірно linear bar у візуалі) | Немає `LinearProgress` у shared components (є лише `CircularProgress` у `Button`, `IconButton`, таблицях) | **Новий** |
+| **Блокування форми** | Усі поля `disabled` + чекбокс disabled | `ContactForm` `disabled={isSubmitting}` — блокує поля, але без прогресу файлу | **Близький** |
+| **Submit під час відправки** | Label «Sending your message…», кнопка disabled | `isSubmitting` без зміни label / без `loading` на Button | **Близький** |
+
+### 7. Успіх і порожній результат
+
+| Компонент | Стани | Код | Статус |
+|-----------|-------|-----|--------|
+| **Success panel** | Замінює картку форми: заголовок, SLA 3 робочі дні, CTA «Write another message» | Після submit — `ModalComponent` + `PaperComponent` + `NotesConfirmModal` (лого, підпис) | **Близький** — інший layout і copy; немає inline success |
+| **Error зі збереженням даних** | Форма лишається заповненою + банер + «Try sending again» | Submit скидає модалку лише при успіху; при помилці форма лишається, але без банера | **Близький** / **новий** (банер) |
+
+### 8. Оболонка сторінки (`app/[lang]/`)
+
+| Елемент макету | Код | Статус |
+|----------------|-----|--------|
+| Двоколонковий layout (intro + форма) | `ContactsInfo` — контакти зліва, `OfferCollaborationForm` справа в `PaperComponent` | **Вже існує** (структура близька; візуал макету багатший — hero «Write to us.») |
+| Заголовок / підзаголовок форми | `OfferCollaborationForm` `formTitle` / `formSubtitle` з i18n `contactsInfoPage` | **Вже існує** |
+| Співпраця (той самий `ContactForm`) | `app/[lang]/cooperation` → `OfferCollaboration` | **Вже існує** — Q-28 про єдину форму |
+
+### Підсумкова матриця повторного використання
+
+| Категорія | Вже існує | Близький | Новий |
+|-----------|-----------|----------|-------|
+| Текстові поля (4) | 0 | 4 | 0 |
+| Вкладення PDF | 0 | 1 (Choose PDF) | 4 (зона, change/remove, прогрес, input) |
+| Кнопки submit / success | 0 | 2 | 1 (demo chips) |
+| Чекбокс | 1 | 0 | 0 |
+| Помилки / статуси | 1 | 2 | 2 |
+| Завантаження | 0 | 2 | 1 |
+| Success / Error outcome | 0 | 2 | 0–1 (банер) |
+| Сторінка контактів | 2 | 0 | 0 |
+
+**Рекомендація для імплементації (scope UI):** максимально розширити **`ContactForm`** + **`OfferCollaborationForm`**, пере використати **`Button`**, **`PaperComponent`**, **`ModalComponent`** / **`NotesConfirmModal`** (якщо залишається модальний success), патерн helper-помилок з **`ContactForm.styles.ts`**. Окремий новий модуль доцільний для **`ContactFormAttachment`** (стани empty / ready / error / uploading + Remove / Change).
+
+**Розбіжності, що впливають на компонентний склад**
+
+1. Макет: **disabled submit** до повної валідності; код: submit завжди клікабельний (окрім `isSubmitting`).
+2. Макет: телефон **обов’язковий**; код: `phoneNumber` optional у Zod.
+3. Макет: success **на сторінці**; код: success **у модалці**.
+4. Макет: **LinearProgress + %** для PDF; код: лише **CircularProgress** на кнопках.
+5. `ContactForm` імпортує сирі MUI `TextField`, тоді як у репозиторії є **`~/ds-components/text-field/TextField`** — варто узгодити на етапі адаптації (не обов’язково в першому PR).
+
+---
+
+## Порівняння з патернами
+
+**Джерело макету:** [прототип](https://match-daily-72208179.figma.site/) (листопад 2026).  
+**Еталон коду:** `ContactForm`, `OfferCollaborationForm`, `ContactsInfo` (`app/[lang]/contacts`), `GetNotesModal`, `~/ds-components/*`, `i18n/messages`, `docs/contact-form-feature.md`.
+
+**Класифікація знахідок**
+
+| Рівень | Коли ставити |
+|--------|----------------|
+| **Blocker** | Суперечить підтвердженим правилам / AC, ламає приймання або вимагає рішення до розробки. |
+| **Important** | Помітна розбіжність UX, копі чи композиції; потрібне узгодження дизайн ↔ продукт ↔ код. |
+| **Minor** | Деталі бренду, дрібна копія, полірування без зміни логіки. |
+
+### 1. Невідповідності термінології
+
+| ID | Знахідка | Макет | Застосунок | Клас |
+|----|----------|-------|------------|------|
+| T-01 | Назва поля імені | **Full name \*** | `contactForm.name`: «Name \*» / «Ім'я \*» | **Important** |
+| T-02 | CTA відправки | **Send message** | `buttonText`: «Send request» / «Надіслати запит» | **Minor** |
+| T-03 | Заголовок блоку форми | **Send a message** (речення) | `contactsInfoPage.formTitle`: «Contact form»; на співпраці — інший ключ | **Minor** |
+| T-04 | Текст повідомлення | Label **Message \*** | «Your message \*» / «Ваше повідомлення \*»; помилка min length — «comment» / «Коментар» | **Minor** |
+| T-05 | Телефон обов’язковий | Label з **\*** і copy про `+` | `phoneNumber` без зірочки; Zod **optional** (суперечить AC Дня 2) | **Blocker** |
+| T-06 | SLA відповіді | **three working days** (Київ) | `formSubtitle`: «within **a few business days**» | **Important** |
+| T-07 | Юридична згода | «read and agree… **consent to being contacted**» | «agree **about the processing**…» + посилання «Privacy Policy» | **Important** |
+| T-08 | Вкладення | **Supporting document**, підказка про **scores / research letters** | У специ — CV/portfolio; у UI поля немає | **Important** |
+| T-09 | Успіх | **Thank you for writing to us.** | `confirmation.title` **ThAnK YoU** / **ДяКуЮ** (декоративна типографіка) | **Important** |
+| T-10 | Після успіху | **Write another message** | `confirmation.btnText`: **Close** / **Закрити** | **Important** |
+| T-11 | Помилка відправки | **Try sending again** | Та сама кнопка, що й submit; окремого retry-label немає | **Minor** (до появи банера Error) |
+
+### 2. Дубльовані UI-концепції
+
+| ID | Знахідка | Де дублюється | Ризик | Клас |
+|----|----------|---------------|-------|------|
+| D-01 | **Одна форма — три контексти** | `ContactForm` на `/contacts`, `/cooperation` (`OfferCollaborationForm`), у **`GetNotesModal`** (запит нот) | Зміна під макет контактів торкнеться нот і співпраці без єдиного імені/варіанту (Q-28) | **Important** |
+| D-02 | **Два канали успіху** | Макет — **inline** панель у картці; код — **`ModalComponent` + `NotesConfirmModal`** (так само в `GetNotesModal`) | Паралельні патерни «подяка в модалці» vs «подяка на місці» | **Important** |
+| D-03 | **Два формулювання intro до форми** | Макет: речення під **Send a message**; код: `requiredFields` + `formSubtitle` з відступом | Користувач читає три схожі інструкції (hero, subtitle, required) | **Minor** |
+| D-04 | **Подвійний трикгер файлу** | **Choose PDF** і **Change file** (макет) | У коді аналогів немає; майбутній ризик двох кнопок, що роблять одне | **Minor** |
+| D-05 | **Дві реалізації іконки помилки** | Єдиний вигляд helper на макеті | `ContactForm.styles` — іконка через CSS `::before`; чекбокс — **`InfoErrorIcon`** | **Minor** |
+| D-06 | **Демо-навігатор станів** | **Preview form state** + **Reference Overview** | Не дубль продакшену, але дублює сценарії тест-кейсів — не переносити на сайт | **Minor** |
+
+### 3. Непослідовні патерни взаємодії
+
+| ID | Знахідка | Макет | Застосунок | Клас |
+|----|----------|-------|------------|------|
+| I-01 | Активація submit | Кнопка **disabled**, доки не валідні всі обов’язкові поля + згода (+ файл) | Submit **завжди клікабельний**; валідація після натискання / `onChange` (RHF `mode: 'onChange'`) | **Important** |
+| I-02 | Валідація телефону | Помилка про **`+` і код країни**; submit заблоковано | **`useHandlePhoneInput`** + маска; generic «Check the phone number format»; порожній номер **допускається** | **Blocker** (разом із T-05 та AC телефону) |
+| I-03 | Невалідний PDF | Submit **disabled** (type / size) | Немає файлу; логіка не визначена | **Important** |
+| I-04 | Відправка | Усі поля **disabled**, label **Sending your message…**, прогрес PDF **%** | Лише `disabled={isSubmitting}`; текст кнопки не змінюється; **`Button.loading`** не використовується | **Important** |
+| I-05 | Успіх | Форма **зникає**, залишається подяка | Відкривається **модалка**; форма під нею; `reset` при закритті | **Important** |
+| I-06 | Помилка мережі | **Банер** над формою; дані збережені; **Try sending again** | `OfferCollaborationForm`: `console.error`, **без UI**; форма лишається, але користувач не бачить причину | **Important** |
+| I-07 | Завантаження на кнопці | Текстовий стан без спінера (Uploading) | DS **`Button`**: при `loading` — **`CircularProgress`** замість label | **Minor** (узгодити з дизайнером один патерн) |
+| I-08 | Контейнер форми | Повноекранна картка на сторінці | **`GetNotesModal`**: той самий `ContactForm` у модалці — інший фокус і розмір | **Minor** |
+
+### 4. Типографіка й відступи
+
+| ID | Знахідка | Макет | Застосунок | Клас |
+|----|----------|-------|------------|------|
+| V-01 | Сітка полів | **Full name** і **Email** в один ряд (desktop) | `textFieldsContainer`: **одна колонка**, `gap: 16px` | **Important** |
+| V-02 | Стиль заголовка форми | **Send a message** — sentence case, sans | `formTitle`: **Oswald**, uppercase, 20–28px (`OfferCollaborationForm.styles`) | **Important** |
+| V-03 | Підзаголовок форми | Абзац без відступу | `formSubtitle`: **`textIndent`** 70px / **240px** — унікальний прийом лише тут | **Minor** |
+| V-04 | Поля вводу | Білий фон, чітка рамка (outlined card) | MUI `TextField` за **Theme** (standard/outlined з underline/border з `rgbaTextFieldColors`) | **Minor** |
+| V-05 | Підказка обов’язкових полів | Довге речення під h2 | `customItalic14` + коротке «\* – required fields» | **Minor** |
+| V-06 | Зона PDF | Dashed **drop-zone**, іконка, вторинна кнопка справа | Немає аналога; найближче — **`DonationForm`** (`Input`/`Select` без рамки-dashed) | **Important** (новий візуальний модуль) |
+| V-07 | Відступи картки | Щільніша сітка форми в макеті | `formWrapper` padding до **96px** горизонтально на `lg` | **Minor** |
+| V-08 | Success type | Спокійний h2/h4, без логотипа/підпису | **`NotesConfirmModal`**: лого, **h2 40–64px**, підпис SVG | **Important** |
+
+### 5. Відсутні стани (є в схожих компонентах застосунку)
+
+| ID | Стан з макету / специ | Де вже є патерн у коді | Що бракує в контактній формі | Клас |
+|----|------------------------|-------------------------|------------------------------|------|
+| S-01 | **Uploading %** для PDF | `CircularProgress` у **`Button`**, **`IconButton`**, таблицях | Немає **`LinearProgress`** / відсотка | **Important** |
+| S-02 | **`Button.loading`** при submit | `~/ds-components/button/Button` | `ContactForm` не передає `loading` | **Minor** |
+| S-03 | Помилка API з UI | Інші блоки: copy-to-clipboard **alert** (`FAQ`, `Footer`) | Немає form-level **alert/banner** для Error | **Important** |
+| S-04 | Max length message | **`useAutoHideMessage`** + helper для name/message | На макеті **не показано**; при імплементації без макету — ризик суперечності | **Minor** |
+| S-05 | Помилка чекбокса з іконкою | `FormHelperText` + **`InfoErrorIcon`** | На макеті Empty чекбокс без помилки (допустимо, якщо submit disabled) | **Minor** |
+| S-06 | Підтвердження після успіху | **`NotesConfirmModal`** (+ лого, підпис) | Inline success **без** модалки — інший набір елементів | **Important** |
+| S-07 | Обов’язковий порожній телефон | AC: телефон mandatory | Окремої картки в Reference немає; у коді — optional | **Blocker** |
+| S-08 | Disabled primary CTA | **`DonationForm`**: «Make a donation» може бути disabled за логікою суми | Патерн **disabled submit до валідності** на макеті сильніший, ніж у донаті | **Minor** |
+
+### 6. Патерни, які дизайн міг би перевикористати
+
+| ID | Рекомендація | Де в застосунку | Що дасть макету |
+|----|--------------|----------------|-----------------|
+| R-01 | Обгортка **PaperComponent** + заголовки **Oswald** | `OfferCollaborationForm` + `ContactsInfo.formWrapper` | Відповідність ширини картки, padding, фон білий на кремовому layout |
+| R-02 | **Helper-помилка** під полем (іконка + текст) | `ContactForm.styles.ts` | Той самий вигляд phone/email/message без нових стилів |
+| R-03 | **`Button`** `color="tertiary"` **fullWidth** | Поточний submit контактів | **Send message** / retry без нової кнопки |
+| R-04 | **`Link`** + `ROUTES.PRIVACY_POLICY` у тексті згоди | `ContactForm` | Зберегти навігацію uk/en; оновити лише copy (T-07) |
+| R-05 | **`NotesConfirmModal`** для успіху | Контакти + **GetNotesModal** | Якщо продукт лишає **модальний** успіх — не малювати новий success-екран, лише оновити subtitle (SLA) |
+| R-06 | **`ModalComponent` + `PaperComponent`** | Контакти, ноти | Альтернатива inline success — вже знайомий користувачеві фондівський патерн |
+| R-07 | **`useHandlePhoneInput`** + маска | Поточний телефон | Зберегти маску, **доповнити** copy/правила під AC (не замінювати на «тільки +» без узгодження) |
+| R-08 | **`useAutoHideMessage`** | Name/message max | Показ max-length без окремих макетів |
+| R-09 | **`~/ds-components/text-field/TextField`** | Фільтри, numeric filtering | Єдина DS-обгортка полів (зараз контакти — сирий MUI) |
+| R-10 | **`createAzureStorageService` / upload** + API | `app/services/upload` | Бекенд-сторона PDF; UI зони вкладення — новий компонент, але сервіс уже в DI |
+| R-11 | **Двоколонковий** `ContactsInfo` | `app/[lang]/contacts` | Ліва колонка контакти + hero; права — форма (макет «Write to us» узгодити з `title`/`h1`) |
+| R-12 | **Копіювання з донату**: outlined **`Button`** у блоці | `DonationForm` suggest buttons | Візуал **Choose PDF** як вторинна кнопка |
+
+### Зведення
+
+| Клас | Кількість |
+|------|-----------|
+| **Blocker** | 2 (T-05, S-07; I-02 тісно пов’язаний) |
+| **Important** | 22 |
+| **Minor** | 14 |
+
+**Пріоритетні рішення перед імплементацією:** T-05 / I-02 / S-07 (телефон), I-01 + I-05 (submit і success), T-06 + T-09 (SLA і тон подяки), D-01 / D-02 (одна форма — один сценарій успіху), V-06 + S-01 (новий PDF-блок і прогрес).
+
+**Примітка:** макет-прототип використовує **інший** header («About / Programs») ніж бойовий сайт (About us, Biography, … з `AGENTS.md`) — це **Minor** для форми, але варто не копіювати навігацію з прототипу в прод.
+
+---
+
+## Доступність
+
+**Для кого цей розділ:** Business Analyst на **refinement** з дизайнером, розробкою та замовником. Мета — узгодити, **що має бути в макеті/AC**, а не провести повний WCAG-аудит продакшен-коду.
+
+**Що перевіряли (листопад 2026):** [прототип Figma Make](https://match-daily-72208179.figma.site/) — усі стани Preview; зріз **accessibility tree**; вибірковий **контраст** (обчислення з computed styles у прототипі); огляд **розмірів** кнопок. Бойовий `ContactForm` згадується як еталон імплементації, де вже є прийнятні патерни.
+
+**Як читати класифікацію на refinement**
+
+| Клас | Що означає для команди |
+|------|------------------------|
+| **Blocker** | Без рішення в дизайні/AC користувачі з клавіатури або SR **не зможуть** пройти сценарій або порушаться вимоги приймання публічної форми. |
+| **Important** | Працюватиме частково; є бар’єри або невідповідність WCAG/UX — потрібна специфікація до релізу. |
+| **Minor** | Поліпшення, прототип-артефакт, або вже покрито в коді при правильній імплементації. |
+
+### Контраст кольорів (помилки та стани)
+
+| ID | Спостереження (макет) | Орієнтир WCAG | Клас | Питання на refinement |
+|----|------------------------|---------------|------|-------------------------|
+| A-01 | Текст помилок полів / PDF (`rgb(139, 43, 32)` на фоні сторінки) — **~7,55:1** при 14px | AA ≥ 4,5:1 | **Minor** | Зафіксувати токен «error text» у DS; не світлішити в інших станах. |
+| A-02 | Допоміжний статус 12px (`Complete all required…`, `Uploading… 68%`) — **~6,29:1** | AA ≥ 4,5:1 | **Minor** | Чи лишаємо 12px для статусу, чи піднімаємо до 14px для запасу контрасту. |
+| A-03 | **Disabled Send message** (текст `rgb(95,102,98)` на `rgb(220,216,206)`) — **~4,14:1** | AA ≥ 4,5:1 для звичайного тексту | **Important** | Підтягнути disabled-стиль: темніший текст або інший фон; або **large text** ≥18px з 3:1 — узгодити з DS `Button`. |
+| A-04 | Поле з помилкою телефону: **рожевий фон** + `aria-invalid` + червоний текст | Не покладатися лише на колір | **Minor** | Добра комбінація; зафіксувати в макеті як «error field» (фон + рамка + текст). |
+| A-05 | Неактивна мова **Українська** на тому ж екрані — **~2,30:1** | AA для UI-тексту | **Important** | Окремо від форми, але на сторінці контактів — підправити toggle (не лише форма). |
+
+### Екранні читачі (повідомлення про помилки)
+
+| ID | Спостереження | Ризик для користувача | Клас | Рекомендація для макету / AC |
+|----|---------------|----------------------|------|------------------------------|
+| SR-01 | **PDF type/size:** `role="alert"` з текстом помилки — оголошується | Низький | **Minor** | Зберегти **один** патерн `alert` для помилок вкладення. |
+| SR-02 | **Помилка телефону:** текст помилки **в accessibility name поля** + окремий рядок унизу (дублювання) | Довге оголошення, можливе повторення | **Important** | Label стабільний; помилка лише через **`aria-describedby`** на helper (як у MUI `helperText` у коді). |
+| SR-03 | **Message:** при заповненні в **ім’я поля потрапляє весь текст листа** | Навігація SR ускладнена | **Important** | Accessible name = «Message»; значення — у `value`, не в `aria-label`. |
+| SR-04 | **Помилка відправки (Error):** заголовок + абзац **без стабільного `role="alert"`** у live-формі (на відміну від PDF) | Користувач може не почути оновлення | **Important** | Банер = **`role="alert"`** або **`aria-live="assertive"`** один раз після submit. |
+| SR-05 | **Uploading 68%:** лише текст, **`role="progressbar"` / `aria-valuenow` немає** | Прогрес неочевидний для SR | **Important** | Додати в макет-нотатку: `progressbar` + текстовий дубль; **`aria-live="polite"`** при зміні %. |
+| SR-06 | Рядок «Complete all required fields…» **не прив’язаний** до disabled submit | Неочевидно, чому кнопки немає в tab order | **Important** | `aria-describedby` на submit → id статусного тексту (навіть коли кнопка disabled). |
+| SR-07 | Підказка телефону в **звичайному label** (довгий приклад `+380…`) | Зайве на кожному фокусі | **Minor** | Підказку в **description**, не в ім’я поля; на макеті показати обидва стани (hint vs error). |
+
+### Навігація клавіатурою
+
+| ID | Спостереження | Клас | Що узгодити |
+|----|---------------|------|-------------|
+| K-01 | **Вибір файлу:** у DOM **`input[type=file]` 1×1 px**; зона — **`readonly` textbox** «Supporting document Choose PDF» | **Blocker** | У проді: видимий **`button`** «Choose PDF» + прихований file input; **не** текстове поле `readonly`. |
+| K-02 | **Choose PDF** у порожньому стані **не окрема кнопка** в a11y-дереві (злите ім’я з textbox) | **Blocker** | Окремий фокусований елемент з тими ж стилями, що на візуалі. |
+| K-03 | **Remove attachment** — кнопка в дереві, але **Change file** часто лише текст у блоці | **Important** | Обидві дії — **кнопки** або один «Change file» з доступним іменем. |
+| K-04 | **Disabled submit** не фокусується (стандарт HTML) | **Important** | Дублювати причину в **видимому + описаному** статусі (див. SR-06); не підміняти disabled на `aria-disabled` без політики. |
+| K-05 | Чекбокс у прототипі **`readonly`** (Empty / Filled) | **Blocker** *(прототип)* | На refinement: це **артефакт демо**; на проді чекбокс **завжди** toggle з клавіатури. |
+| K-06 | Порядок tab: **8+ chip Preview** перед полями форми | **Minor** *(прототип)* | На проді chips **немає**; вимога: логічний порядок полів → файл → згода → submit. |
+| K-07 | **Success:** нова розмітка без вимоги **перенести фокус** на заголовок подяки | **Important** | AC: після успіху фокус на **h2** «Thank you…»; **Write another message** — наступний tab-stop. |
+| K-08 | Посилання **privacy policy** в довгому label чекбокса — окремий tab-stop | **Minor** | Очікувано; переконатися, що порядок: чекбокс → link логічний у макеті uk/en. |
+
+### Рух і анімація
+
+| ID | Спостереження | Клас | Рекомендація |
+|----|---------------|------|--------------|
+| M-01 | У прототипі багато **CSS transitions**; **прогрес %** імовірно оновлюється | **Important** | У AC/дизайн-нотатці: **`prefers-reduced-motion`** — статичний % або без анімованої смуги. |
+| M-02 | Немає макету **без** відсоткової анімації | **Minor** | Один кадр «reduced motion» для розробки. |
+| M-03 | Можливий **спінер** на submit у коді (`CircularProgress`) vs текст «Sending…» на макеті | **Minor** | Узгодити: не лише обертання; оголошувати текст через **`aria-busy`** на формі. |
+
+### Розміри зон дотику
+
+| ID | Елемент | Розмір (прототип) | Орієнтир | Клас |
+|----|---------|-------------------|----------|------|
+| T-01 | **Send message** | ~224×**52** px | ≥24×24 (WCAG 2.5.8); 44×44 — best practice mobile | **Minor** |
+| T-02 | **Remove attachment** | ~104×**16** px | Нижче 24px по висоті | **Important** |
+| T-03 | **Preview chips** | висота **~26** px | Демо, не на проді | **Minor** *(прототип)* |
+| T-04 | Текстові поля | висота **~48** px | Прийнятно | **Minor** |
+| T-05 | **Choose PDF** (візуальна кнопка) | уточнити в Figma min height/padding | Як **DonationForm** outlined buttons | **Important** | У макеті позначити **min touch 44px** або hit-area padding на mobile. |
+
+### Що вже є в коді — перевикористати при імплементації
+
+_(Не вимоги до Figma, а аргумент на refinement «не вигадуємо заново».)_
+
+- **Помилки полів:** MUI `TextField` + `helperText` / `error` + іконка в `ContactForm.styles.ts` — відповідає макету, якщо не дублювати текст у label (SR-02).
+- **Чекбокс:** нативна клавіатура + `FormHelperText` для помилки згоди.
+- **Модальний успіх:** `ModalComponent` — керування фокусом при відкритті (якщо продукт лишає модалку замість inline success).
+
+### Підсумок для слайду refinement
+
+| Клас | Кількість |
+|------|-----------|
+| **Blocker** | 3 (K-01, K-02, K-05*) |
+| **Important** | 14 |
+| **Minor** | 11 |
+
+\*K-05 — blocker **прототипу**; на проді очікується виправлення в реалізації, але макет має показувати **інтерактивний** чекбокс.
+
+**Топ-5 питань власнику форми / дизайнеру**
+
+1. **Файл:** підтвердити патерн «кнопка Choose PDF + прихований input», не textbox (K-01, K-02).
+2. **Помилки:** один стандарт — `aria-describedby` для полів, `role="alert"` для PDF і submit error (SR-02, SR-04).
+3. **Uploading:** `progressbar` + `aria-live` (SR-05, M-01).
+4. **Disabled submit:** контраст і зв’язок із текстом статусу (A-03, SR-06).
+5. **Success / Error:** куди йде фокус після зміни view (K-07).
+
+**Обмеження аналізу:** прототип ≠ фінальний HTML сайту; контраст на проді перевірити після імплементації в темі фонду; українські стани форми в прототипі **не всі** прогнані voice-over — запланувати окремий прогін uk перед релізом (**Minor**).
+
+---
+
+## Зв’язок із `docs/spec-contact-form.md`
+
+Зведена специфікація refinement (розділи **1–9**) збирає:
+
+| З цього документа | Куди в spec |
+|-------------------|-------------|
+| Q-15–Q-29 | §7 (разом із Q-01–Q-14 з Дня 2) |
+| Приховані припущення п. 1–15 | ASM-02–ASM-15 у §6 |
+| Відсутні стани, ризики, T-/I-/V-/S-/R- знахідки | §9 (прогалини), IN-06, OUT-01–02 |
+| Доступність (A-, SR-, K-, M-, T-) | §9 — без нових AC до рішень Q-20–Q-29 |
+
+**Не переносити без рішення:** нові RULE/AC-ID — лише посилання на існуючі RULE-04–RULE-30 та AC-01, AC-04, AC-07–AC-09, AC-12, AC-15, AC-18, AC-19 з `contact-form-feature.md`. §10 spec не заповнювався цим аналізом.
